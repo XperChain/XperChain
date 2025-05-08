@@ -19,12 +19,15 @@ from import_peers_from_seed import import_peers_from_seed
 
 # 타임스탬프 설정값
 KST = timezone(timedelta(hours=9))  # 한국 시간대 설정
-miner_wallet = '716ac742850aa3f0844d1fb02f2dda20c7f10fc4897184a46a556e522aa46f0d300c0f728e98e197f21b43111282daca646b032640e130dc28d56fe19c93757c'
 
 # DB 설정
 MONGO_URL = st.secrets["mongodb"]["uri"]
 MONGO_READ_URL = st.secrets["mongodb_read"]["uri"]
 MONGO_SEED_READ_URL = st.secrets["mongodb_seed_read"]["uri"]
+miner_wallet = st.secrets["miner"]["public_key"]
+miner_key = st.secrets["miner"]["private_key"]
+
+
 client = MongoClient(MONGO_URL)
 db = client["blockchain_db"]
 blocks = db["blocks"]
@@ -113,7 +116,7 @@ if not st.session_state["logged_in_user"]:
                     if added_peers:
                         st.info(f"🔄 총 {len(added_peers)}개 peer가 추가되었습니다.")
                 
-                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet)
+                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = False)
                     
                     st.session_state["logged_in_user"] = user
                     st.session_state["balance"] = get_balance(user["public_key"], blocks)
@@ -225,7 +228,7 @@ with st.expander("📤 트랜잭션 전송", expanded=False):
                 }
                 tx_data["signature"] = sign_transaction(private_key, tx_data)
                 tx_pool.insert_one(tx_data)                
-                consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet)
+                consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = False)
                 st.success("✅ 트랜잭션이 추가되었습니다.")                               
                 st.rerun()
                 
@@ -234,8 +237,18 @@ with st.expander("📤 트랜잭션 전송", expanded=False):
         with col11:
             # 트랜잭션 풀에 거래가 있을 때만 버튼 표시
             if tx_pool.count_documents({}) > 0:
-                if st.button("⛏️ 블록 생성"):
-                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet)
+                if st.button("⛏️ Airdrop 보상"):
+                    airdrop_value = 10
+                    tx_data = {
+                        "sender": miner_wallet,
+                        "recipient": public_key,
+                        "amount": airdrop_value,
+                        "fee": transaction_fee,
+                        "timestamp": time.time()
+                    }
+                    tx_data["signature"] = sign_transaction(miner_key, tx_data)
+                    tx_pool.insert_one(tx_data)                
+                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = False)
                 
         with col12:  
             if tx_pool.count_documents({}) > 0:
@@ -247,9 +260,7 @@ with st.expander("📤 트랜잭션 전송", expanded=False):
                     elapsed = now - last_time
                     remaining = timedelta(minutes=block_time_in_min) - elapsed
                     if remaining.total_seconds() > 0:
-                        st.info(f"⏳ 다음 블록 생성까지 남은 시간: {str(remaining).split('.')[0]}")
-                    else:
-                        st.info("✅ 블록이 생성됨")
+                        st.info(f"⏳ 다음 Airdrop 보상까지 남은 시간: {str(remaining).split('.')[0]}")
                 else:
                     st.info("ℹ️ 아직 블록체인이 시작되지 않았습니다.")        
             
