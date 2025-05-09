@@ -228,7 +228,7 @@ with st.expander("📤 트랜잭션 전송", expanded=False):
                 }
                 tx_data["signature"] = sign_transaction(private_key, tx_data)
                 tx_pool.insert_one(tx_data)                
-                consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = True)
+                consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = False)
                 st.success("✅ 트랜잭션이 추가되었습니다.")                               
                 st.rerun()
                 
@@ -248,7 +248,7 @@ with st.expander("📤 트랜잭션 전송", expanded=False):
                     }
                     tx_data["signature"] = sign_transaction(miner_key, tx_data)
                     tx_pool.insert_one(tx_data)                
-                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = True)
+                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = False)
                 
         with col12:  
             if tx_pool.count_documents({}) > 0:
