@@ -116,7 +116,7 @@ if not st.session_state["logged_in_user"]:
                     if added_peers:
                         st.info(f"🔄 총 {len(added_peers)}개 peer가 추가되었습니다.")
                 
-                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = True)
+                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = False)
                     
                     st.session_state["logged_in_user"] = user
                     st.session_state["balance"] = get_balance(user["public_key"], blocks)
