@@ -95,28 +95,18 @@ if not st.session_state["logged_in_user"]:
                         "password_hash": hash_password(password),
                         "public_key": pub,
                         "private_key": priv
-                    })
-                    st.success("🎉 회원가입 성공! 이제 로그인 해보세요.")
-
-                  
+                    })                            
+                    create_block(blocks, tx_pool, block_time_in_min, miner_address=pub, display=False)
+                    st.success("🎉 회원가입 성공! 이제 로그인 해보세요.")                  
 
         elif auth_mode == "로그인":
             if st.button("🔓 로그인"):
                 user = users.find_one({"username": username})
                 if not user or user["password_hash"] != hash_password(password):
                     st.error("❌ 사용자 또는 비밀번호가 틀렸습니다.")
-                else:                    
-                    added_peers = import_peers_from_seed(
-                        seed_uri=MONGO_SEED_READ_URL,
-                        my_uri=MONGO_READ_URL,
-                        local_peers_collection=peers,  # 현재 내 peers 컬렉션 (MongoDB)                        
-                    )
-
-                    # 필요시 추가 처리
-                    if added_peers:
-                        st.info(f"🔄 총 {len(added_peers)}개 peer가 추가되었습니다.")
+                else:                                       
                 
-                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = False)
+                    #consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = True)
                     
                     st.session_state["logged_in_user"] = user
                     st.session_state["balance"] = get_balance(user["public_key"], blocks)
@@ -170,7 +160,7 @@ if "qr_scan_requested" not in st.session_state:
 if "recipient_scanned" not in st.session_state:
     st.session_state["recipient_scanned"] = ""
 
-with st.expander("📤 트랜잭션 전송", expanded=False):
+with st.expander("📤 트랜잭션 전송", expanded=True):
     col1, col2 = st.columns([4, 1], gap="small")
 
     with col1:
@@ -228,8 +218,8 @@ with st.expander("📤 트랜잭션 전송", expanded=False):
                 }
                 tx_data["signature"] = sign_transaction(private_key, tx_data)
                 tx_pool.insert_one(tx_data)                
-                consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = False)
-                st.success("✅ 트랜잭션이 추가되었습니다.")                               
+                #consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = True)
+                st.success("✅ 트랜잭션이 추가되었습니다.")                      
                 st.rerun()
                 
     with col2:
@@ -237,18 +227,28 @@ with st.expander("📤 트랜잭션 전송", expanded=False):
         with col11:
             # 트랜잭션 풀에 거래가 있을 때만 버튼 표시
             if tx_pool.count_documents({}) > 0:
-                if st.button("⛏️ Airdrop 보상"):
-                    airdrop_value = 10
-                    tx_data = {
-                        "sender": miner_wallet,
-                        "recipient": public_key,
-                        "amount": airdrop_value,
-                        "fee": transaction_fee,
-                        "timestamp": time.time()
-                    }
-                    tx_data["signature"] = sign_transaction(miner_key, tx_data)
-                    tx_pool.insert_one(tx_data)                
-                    consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = False)
+                if st.button("⛏️ 블록 채굴"):
+                    last_block = blocks.find_one(sort=[("index", -1)])
+                    last_block_timestamp = last_block["timestamp"] if last_block else 0 
+                    
+                    result = verify_blocktime(timestamp_after = time.time(), timestamp_before = last_block_timestamp, block_time_in_min = block_time_in_min)
+                        
+                    if result:
+                        airdrop_value = 10
+                        tx_data = {
+                            "sender": miner_wallet,
+                            "recipient": public_key,
+                            "amount": airdrop_value,
+                            "fee": transaction_fee,
+                            "timestamp": time.time()
+                        }
+                        tx_data["signature"] = sign_transaction(miner_key, tx_data)
+                        tx_pool.insert_one(tx_data)  
+                        create_block(blocks, tx_pool, block_time_in_min, miner_address = miner_wallet)
+                        # 🔄 잔고 업데이트
+                        st.session_state["balance"] = get_balance(public_key, blocks)
+                        st.rerun()
+                        #consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = True)
                 
         with col12:  
             if tx_pool.count_documents({}) > 0:
@@ -260,11 +260,12 @@ with st.expander("📤 트랜잭션 전송", expanded=False):
                     elapsed = now - last_time
                     remaining = timedelta(minutes=block_time_in_min) - elapsed
                     if remaining.total_seconds() > 0:
-                        st.info(f"⏳ 다음 Airdrop 보상까지 남은 시간: {str(remaining).split('.')[0]}")
+                        seconds = int(remaining.total_seconds())
+                        st.info(f"⏳ 채굴 대기: {seconds}초")
                 else:
                     st.info("ℹ️ 아직 블록체인이 시작되지 않았습니다.")        
             
-with st.expander("📥 트랜잭션 풀", expanded=False):
+with st.expander("📥 트랜잭션 풀", expanded=True):
     txs = list(tx_pool.find().sort("timestamp", -1))
 
     if txs:
@@ -364,64 +365,3 @@ with st.expander("📚 전체 거래 내역", expanded=False):
         st.dataframe(styled_df, use_container_width=True)
     else:
         st.info("📭 내 거래 기록이 없습니다.")
-
-
-# ⛓️ 블록체인 보기
-with st.expander("⛓️ 블록체인 탐색기", expanded=False):
-    # 📌 최신 블록 번호 가져오기
-    latest_block = blocks.find_one(sort=[("index", -1)])    
-
-    if latest_block is None:
-        st.warning("📭 아직 블록체인이 생성되지 않았습니다.")
-    else:    
-        latest_index = latest_block["index"] if latest_block else 1
-
-        # 🔍 블록 번호 입력 (기본값 = 최신 블록 번호)
-        search_index = st.number_input("🔍 블록 번호로 검색", min_value=1, step=1, value=latest_index, format="%d")
-
-        block = blocks.find_one({"index": search_index})
-        if block:
-            # 📋 블록 정보 표
-            block_info = pd.DataFrame({
-                "속성": ["블록 번호", "해시", "이전 해시", "생성 시간", "트랜잭션 수"],
-                "값": [
-                    block.get("index"),
-                    block.get("hash", "")[:10] + "...",
-                    block.get("previous_hash", "")[:10] + "...",
-                    datetime.fromtimestamp(block.get("timestamp", time.time()), tz=KST).strftime('%Y-%m-%d %H:%M:%S'),
-                    len(block.get("transactions", []))
-                ]
-            })
-
-            st.markdown("#### 📋 블록 정보")
-            st.dataframe(block_info, use_container_width=True)
-
-            # 📦 트랜잭션 목록
-            transactions = block.get("transactions", [])
-            if not transactions:
-                st.info("📭 이 블록에는 트랜잭션이 없습니다.")
-            else:
-                tx_table = []
-                for tx in transactions:
-                    ts = tx.get("timestamp")
-                    time_str = datetime.fromtimestamp(ts, tz=KST).strftime('%Y-%m-%d %H:%M:%S') if ts else "없음"
-
-                    amount = tx.get("amount", 0.0)
-                    fee = tx.get("fee", 0.0)
-                    total = amount + fee
-
-                    tx_table.append({
-                        "보낸 사람": tx.get("sender", "")[:5] + "...",
-                        "받는 사람": tx.get("recipient", "")[:5] + "...",
-                        "금액": amount,
-                        "수수료": fee,
-                        "총합": total,
-                        "서명": tx.get("signature", "")[:5] + "...",
-                        "시간": time_str
-                    })
-                st.markdown("#### 📦 트랜잭션 목록")
-                st.dataframe(pd.DataFrame(tx_table), use_container_width=True)
-
-        else:
-            st.info("❗ 해당 번호의 블록을 찾을 수 없습니다.")
-

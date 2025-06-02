@@ -4,20 +4,18 @@ import math
 import streamlit as st
 from pymongo import MongoClient
 from datetime import datetime, timedelta, timezone
+import time
 
 import hashlib, json, base64
 from ecdsa import VerifyingKey, VerifyingKey, BadSignatureError, SigningKey, SECP256k1
 
-# 블록 생성 주기
-block_time_in_min = 1
-
-# 거래 수수료
-transaction_fee = 1
+block_time_in_min = 1   # 블록 생성 주기(분)
+transaction_fee = 1     # 거래 수수료
 
 # 블록 해시 함수
-def hash_block(block):
-    block_string = json.dumps(block, sort_keys=True).encode()
-    return hashlib.sha256(block_string).hexdigest()
+def generate_hash(contents):
+    contents_string = json.dumps(contents, sort_keys=True).encode()
+    return hashlib.sha256(contents_string).hexdigest()
 
 # 서명 검증 함수
 def verify_signature(tx):
@@ -44,7 +42,7 @@ def verify_signature(tx):
     except (BadSignatureError, ValueError, KeyError):
         return False
 
-# 서명 함수
+# 서명 생성 함수
 def sign_transaction(private_key, tx_data):
     tx_copy = dict(tx_data)
     tx_string = json.dumps(tx_copy, sort_keys=True).encode()
@@ -84,68 +82,21 @@ def get_block_reward(block_height):
     reward = round(R0 * math.exp(-decay_factor * block_height))
     return max(0, reward)
 
+# 블록 생성 시간 검증 함수
+def verify_blocktime(timestamp_after, timestamp_before, block_time_in_min):   
+    #st.write(f"timestamp_after {timestamp_after}, timestamp_before {timestamp_before}")
+    if timestamp_after - timestamp_before >= block_time_in_min*60:
+        return True
+    else:
+        return False
+    
 # 블록 생성 함수
-def create_block(transactions, previous_hash="0"):
-    block = {
-        "index": blocks.count_documents({}) + 1,
-        "timestamp": time.time(),
-        "transactions": transactions,
-        "previous_hash": previous_hash
-    }
-    block["hash"] = hash_block(block)
-    return block
-
-# 블록 생성 검증 함수
-def auto_generate_block_if_needed(blocks, tx_pool, block_time_in_min, miner_address=None, display=False):
+def create_block(blocks, tx_pool, block_time_in_min, miner_address=None, display=False):
     last_block = blocks.find_one(sort=[("index", -1)])
-    last_time = datetime.fromtimestamp(last_block["timestamp"]) if last_block else datetime.min
-
-    utc_now = datetime.utcnow()
-    now = utc_now + timedelta(hours=9)
-
-    if display:
-        st.write(f"마지막 블록 {last_time}, 지금 시간 {now}")
-
-    if now - last_time >= timedelta(minutes=block_time_in_min):
-        raw_txs = list(tx_pool.find({}))
-        transactions = []
-        invalid_txs = []
-        temp_balances = {}
-
-        total_fees = 0.0  # ← 모든 트랜잭션의 수수료 합계
-        for tx in raw_txs:
-            tx = dict(tx)
-            tx.pop("_id", None)
-
-            sender = tx["sender"]
-            recipient = tx["recipient"]
-            amount = tx["amount"]
-            fee = tx.get("fee", 0.0)
-
-            if sender == "SYSTEM":
-                transactions.append(tx)
-                continue
-
-            if not verify_signature(tx):
-                if display:
-                    st.warning(f"❌ 무효 트랜잭션 - 서명 검증 실패: {sender[:10]}...")
-                invalid_txs.append(tx)
-                continue
-
-            temp_balances[sender] = temp_balances.get(sender, get_balance(sender, blocks))
-            if temp_balances[sender] < amount + fee:
-                if display:
-                    st.warning(f"❌ 무효 트랜잭션 - 잔고 부족: {sender[:10]}...")
-                invalid_txs.append(tx)
-                continue
-
-            # 유효한 트랜잭션 처리
-            temp_balances[sender] -= (amount + fee)
-            temp_balances[recipient] = temp_balances.get(recipient, get_balance(recipient, blocks)) + amount
-            total_fees += fee
-            transactions.append(tx)
-
-        # 블록 인덱스
+    last_block_timestamp = last_block["timestamp"] if last_block else 0       
+     
+    if verify_blocktime(timestamp_after = time.time(), timestamp_before = last_block_timestamp, block_time_in_min = block_time_in_min): 
+        raw_txs = list(tx_pool.find({}))                
         new_index = last_block["index"] + 1 if last_block else 1
 
         # 보상 합계 준비
@@ -153,9 +104,7 @@ def auto_generate_block_if_needed(blocks, tx_pool, block_time_in_min, miner_addr
         total_fees = 0
         valid_txs = []
         invalid_txs = []
-        system_tx_count = 0
-
-        # 임시 잔고 계산용
+        system_tx_count = 0        
         temp_balances = {}
 
         for tx in raw_txs:
@@ -169,13 +118,7 @@ def auto_generate_block_if_needed(blocks, tx_pool, block_time_in_min, miner_addr
 
             if sender == "SYSTEM":
                 system_tx_count += 1
-                expected = reward + total_fees
-                if amount != expected:
-                    if display:
-                        st.warning(f"❌ SYSTEM 보상 금액 불일치: 예상={expected}, 실제={amount}")
-                    invalid_txs.append(tx)
-                else:
-                    valid_txs.append(tx)
+                invalid_txs.append(tx)                
                 continue
 
             if not verify_signature(tx):
@@ -197,41 +140,34 @@ def auto_generate_block_if_needed(blocks, tx_pool, block_time_in_min, miner_addr
             total_fees += fee
             valid_txs.append(tx)
 
-        # SYSTEM 트랜잭션이 2개 이상이면 모두 제거
+        # SYSTEM 보상이 아직 추가되지 않았는데, 보상 트랜잭션이 있으면 않됨
         if system_tx_count >=1:
             if display:
                 st.warning(f"⚠️ SYSTEM 트랜잭션이 {system_tx_count}개 존재합니다. 모두 무시하고 새 보상 트랜잭션만 생성됩니다.")
-            # SYSTEM이 포함된 트랜잭션 제거
-            valid_txs = [tx for tx in valid_txs if tx.get("sender") != "SYSTEM"]
-            invalid_txs += [tx for tx in raw_txs if tx.get("sender") == "SYSTEM"]
-
-
-        # 블록 생성 조건 확인
-        now = datetime.utcnow() + timedelta(hours=9)
-        if now - last_time < timedelta(minutes=block_time_in_min):
-            if display:
-                st.info("⏳ 블록 생성 조건(시간)이 충족되지 않았습니다.")
-            return
-
-        # SYSTEM 보상 트랜잭션 생성
+            
+        # 보상 트랜잭션 생성        
+        timestamp = time.time()
         if (reward > 0 or total_fees > 0) and miner_address:
             coinbase_tx = {
                 "sender": "SYSTEM",
                 "recipient": miner_address,
                 "amount": reward + total_fees,
-                "timestamp": now.timestamp(),
+                "timestamp": timestamp,
                 "signature": "coinbase"
             }
+            # 트랜잭션 해시 계산
+            tx_hash = generate_hash(coinbase_tx)            
+            coinbase_tx["tx_hash"] = tx_hash
             valid_txs.insert(0, coinbase_tx)
 
         # 블록 생성
         new_block = {
             "index": new_index,
-            "timestamp": now.timestamp(),
+            "timestamp": timestamp,
             "transactions": valid_txs,
             "previous_hash": last_block["hash"] if last_block else "0"
         }
-        new_block["hash"] = hash_block(new_block)
+        new_block["hash"] = generate_hash(new_block)
         blocks.insert_one(new_block)
 
         # 트랜잭션 풀 정리
@@ -249,7 +185,7 @@ def auto_generate_block_if_needed(blocks, tx_pool, block_time_in_min, miner_addr
 
     else:
         if display:
-            st.info("⏳ 블록 생성 조건(1분)이 충족되지 않았습니다.")
+            st.info("⏳ 블록 생성 조건(시간간)이 충족되지 않았습니다.")
 
 # 합의 알고리즘
 # [사용자 버튼 클릭]
@@ -276,51 +212,74 @@ def consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_address,
     my_last_index = my_last_block["index"] if my_last_block else -1
     my_last_hash = my_last_block["hash"] if my_last_block else "0"
     my_len = blocks.count_documents({})
-    forked_blocks = []
     
     if display:
         st.write(f"📦 현재 내 체인 길이: {my_len}, 마지막 인덱스: {my_last_index}")
 
     # 각 피어 체인 확인
+    peer_longer = []
+    peer_forked = []
     for peer in peers.find():
         try:
             peer_uri = peer["uri"]
             if display:
                 st.info(f"🌐 피어 연결 시도: {peer_uri}")
+
             peer_client = MongoClient(peer_uri)
             peer_db = peer_client["blockchain_db"]
             peer_blocks = peer_db["blocks"]
             peer_len = peer_blocks.count_documents({})
-            
+
+            if peer_len > my_len:
+                peer_longer.append({
+                    "public_key": peer["public_key"],
+                    "uri": peer_uri,
+                    "timestamp": peer["timestamp"],
+                    "length": peer_len
+                })
+        except Exception as e:
             if display:
-                st.write(f"🔗 피어 체인 길이: {peer_len}")
+                st.warning(f"❌ 피어 접근 실패: {e}")
+                
+    peer_longer = sorted(peer_longer, key=lambda x: x["length"], reverse=True)    
+    for peer in peer_longer:
+        try:
+            peer_len = peer["length"]
+            peer_uri = peer["uri"]
 
-            if peer_len > my_len:  # 2. 더 긴 체인 존재
+            # 현재 내 체인 정보
+            my_last_block = blocks.find_one(sort=[("index", -1)])
+            my_last_index = my_last_block["index"] if my_last_block else -1
+            my_last_hash = my_last_block["hash"] if my_last_block else "0"
+            my_len = blocks.count_documents({})
+
+            # Peer 정보
+            peer_client = MongoClient(peer_uri)
+            peer_db = peer_client["blockchain_db"]
+            peer_blocks = peer_db["blocks"]            
+
+            if peer_len > my_len:  # 2. 더 긴 체인 존재            
                 if display:
-                    st.info("📏 피어의 체인이 더 깁니다. 블록 일치 여부 확인 중...")
-
+                    st.info("📏 피어 체인({peer_len})이 내 체인({my_len})보다 깁니다. 블록 일치 여부 확인 중...")
+                    
+                valid = True  
                 same_block = peer_blocks.find_one({"index": my_last_index})     
                 if my_len==0 or (same_block and same_block["hash"] == my_last_hash ):  # 3. 블록 일치 확인
                     if display:
                         st.success("✅ 마지막 블록이 일치하거나 내 블록이 초기화된 경우 입니다. 새로운 블록만 가져옵니다.")
-                        
+
                     new_blocks = list(peer_blocks.find({"index": {"$gt": my_last_index}}).sort("index"))  # 4   
-                    
-                    for blk in new_blocks:
-                        blk_time = datetime.fromtimestamp(blk["timestamp"])
-                        prev_block = blocks.find_one({"index": blk["index"] - 1})
+
+                    for blk in new_blocks:                        
+                        prev_block = peer_blocks.find_one({"index": blk["index"] - 1})
                         if prev_block or blk["index"]==1: # Genesis block
-                            if blk["index"]==1:
-                                prev_time=datetime.fromtimestamp(0)
-                            else:
-                                prev_time = datetime.fromtimestamp(prev_block["timestamp"])
-                            if blk_time - prev_time >= timedelta(minutes=block_time_in_min):
-                                valid = True        
-                                system_tx_count = 0  # SYSTEM 트랜잭션 수 카운터
+                            prev_time = 0 if blk["index"] == 1 else prev_block["timestamp"]                                                    
+                            if verify_blocktime(timestamp_after = blk["timestamp"], timestamp_before = prev_time, block_time_in_min = block_time_in_min):
+                                system_tx_count = 0  
+                                total_fees = sum(tx.get("fee", 0) for tx in blk["transactions"] if tx["sender"] != "SYSTEM")
                                 for tx in blk["transactions"]:
                                     if tx["sender"] == "SYSTEM":
-                                        system_tx_count += 1
-                                        total_fees = sum(tx.get("fee", 0) for tx in blk["transactions"] if tx["sender"] != "SYSTEM")
+                                        system_tx_count += 1                                        
                                         expected_reward = get_block_reward(blk["index"]) + total_fees
                                         if tx["amount"] != expected_reward:
                                             if display:
@@ -338,77 +297,140 @@ def consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_address,
                                                 st.warning("❌ 잔고 부족")
                                             valid = False
                                             break
+                                    # 블록 해시 검증 추가 필요
 
                             if system_tx_count > 1:
                                 if display:
                                     st.warning("🚫 SYSTEM 트랜잭션이 1개를 초과합니다.")
                                 valid = False
-
-                            if valid:
-                                blocks.insert_one(blk)
-                                for tx in blk["transactions"]:
-                                    tx_pool.delete_one({
-                                        "sender": tx["sender"],
-                                        "timestamp": tx["timestamp"]
-                                    })
-                                if display:
-                                    st.success(f"📥 블록 #{blk['index']} 동기화 완료")
                         else:
+                            valid = False
                             if display:
                                 st.info(f"⏳ 블록 #{blk['index']}은 생성 시간 기준 조건({block_time_in_min}분 경과)을 만족하지 않음")           
                 else:
                     if display:
                         st.warning("⚠️ 마지막 블록이 불일치합니다. 분기 체인으로 처리합니다.")
-                    forked = list(peer_blocks.find({"index": {"$gt": my_last_index}}).sort("index"))
-                    forked_blocks.extend(forked)  # 6
+                    
+                    peer_forked.append(peer)
+                    valid = False
+
+                if valid:
+                    for blk in new_blocks:
+                        blocks.insert_one(blk)
+                        for tx in blk["transactions"]:
+                            tx_pool.delete_one({
+                                "sender": tx["sender"],
+                                "timestamp": tx["timestamp"]
+                            })
+                        if display:
+                            st.success(f"📥 블록 #{blk['index']} 동기화 완료")
+                    break
+                            
         except Exception as e:
             if display:
                 st.warning(f"❌ 피어 접근 실패: {e}")
 
     # 분기 체인 처리
-    if forked_blocks:
+    if peer_forked:
         if display:
             st.subheader("🌿 [분기 체인 처리]")
-        for blk in forked_blocks:
-            blk_time = datetime.fromtimestamp(blk["timestamp"])
-            if (datetime.utcnow()+ timedelta(hours=9)) - blk_time >= timedelta(minutes=block_time_in_min):
-                for tx in blk["transactions"]:
-                    tx_exists_in_chain = blocks.find_one({
-                        "transactions.timestamp": tx["timestamp"],
-                        "transactions.sender": tx["sender"]
-                    })
-                    tx_exists_in_pool = tx_pool.find_one({
-                        "timestamp": tx["timestamp"],
-                        "sender": tx["sender"]
-                    })
-                    
-                    if not tx_exists_in_chain and not tx_exists_in_pool:
-                        if tx["sender"] == "SYSTEM":
-                            total_fees = sum(tx.get("fee", 0) for tx in blk["transactions"] if tx["sender"] != "SYSTEM")
-                            expected_reward = get_block_reward(blk["index"]) + total_fees
-                            if tx["amount"] == expected_reward:
-                                tx_pool.insert_one(tx)
-                                if display:
-                                    st.info(f"🎁 보상 트랜잭션 추가됨: {tx['recipient']} ({tx['amount']})")
-                            else:
-                                if display:
-                                    st.warning(f"❌ SYSTEM 보상 불일치: 예상={expected_reward}, 실제={tx['amount']}")
-                        elif verify_signature(tx) and get_balance(tx["sender"], blocks) >= tx["amount"]:
-                            tx_pool.insert_one(tx)
-                            if display:
-                                st.info(f"🔄 분기 트랜잭션 추가: {tx['sender']} → {tx['recipient']} ({tx['amount']})")
-                        else:
-                            if display:
-                                st.warning("❌ 트랜잭션 유효성 검증 실패 (서명 또는 잔고)")
-                    elif tx_exists_in_pool:
-                        if display:
-                            st.info(f"⚠️ 이미 트랜잭션 풀에 존재: {tx['sender']} ({tx['amount']})")
+            
+        for peer in peer_forked:
+            peer_len = peer["length"]
+            peer_uri = peer["uri"]
 
+            # 현재 내 체인 정보
+            my_last_block = blocks.find_one(sort=[("index", -1)])
+            my_last_index = my_last_block["index"] if my_last_block else -1
+            my_last_hash = my_last_block["hash"] if my_last_block else "0"
+            my_len = blocks.count_documents({})
+
+            # Peer 정보
+            peer_client = MongoClient(peer_uri)
+            peer_db = peer_client["blockchain_db"]
+            peer_blocks = peer_db["blocks"]         
+            
+            valid = True
+            for blk in peer_blocks:                
+                prev_block = peer_blocks.find_one({"index": blk["index"] - 1})
+                if prev_block or blk["index"]==1: # Genesis block
+                    prev_time = 0 if blk["index"] == 1 else prev_block["timestamp"]                                                    
+                    if verify_blocktime(timestamp_after = blk["timestamp"], timestamp_before = prev_time, block_time_in_min = block_time_in_min):                            
+                        system_tx_count = 0  
+                        total_fees = sum(tx.get("fee", 0) for tx in blk["transactions"] if tx["sender"] != "SYSTEM")
+                        for tx in blk["transactions"]:
+                            if tx["sender"] == "SYSTEM":
+                                system_tx_count += 1                                
+                                expected_reward = get_block_reward(blk["index"]) + total_fees
+                                if tx["amount"] != expected_reward:
+                                    if display:
+                                        st.warning(f"❌ SYSTEM 보상 금액 불일치 (예상: {expected_reward}, 실제: {tx['amount']})")
+                                    valid = False
+                                    break
+                            else:
+                                if not verify_signature(tx):
+                                    if display:
+                                        st.warning("❌ 서명 검증 실패")
+                                    valid = False
+                                    break
+                                if get_balance(tx["sender"], blocks) < tx["amount"] + tx.get("fee", 0):
+                                    if display:
+                                        st.warning("❌ 잔고 부족")
+                                    valid = False
+                                    break
+
+                    if system_tx_count > 1:
+                        if display:
+                            st.warning("🚫 SYSTEM 트랜잭션이 1개를 초과합니다.")
+                        valid = False
+                else:
+                    valid = False
+                    if display:
+                        st.info(f"⏳ 블록 #{blk['index']}은 생성 시간 기준 조건({block_time_in_min}분 경과)을 만족하지 않음")  
+                        
+            if valid:
+                # 분기점 탐색
+                divergence_index = -1
+                for i in range(min(blocks.count_documents({}), peer_blocks.count_documents({}))):
+                    my_blk = blocks.find_one({"index": i})
+                    peer_blk = peer_blocks.find_one({"index": i})
+                    if not my_blk or not peer_blk:
+                        break
+                    if my_blk["hash"] != peer_blk["hash"]:
+                        divergence_index = i
+                        break
+                        
+                # 내 블록 → 삭제 & peer 블록 → 덮어쓰기
+                if divergence_index >= 0:
+                    # 2-1. 내 체인에서 해당 지점 이후 블록 가져오기 (복원할 트랜잭션 확인용)
+                    my_forked_blocks = list(blocks.find({"index": {"$gte": divergence_index}}).sort("index"))
+
+                    # 2-2. 기존 블록 삭제
+                    blocks.delete_many({"index": {"$gte": divergence_index}})
+
+                    # 2-3. peer의 블록 삽입
+                    peer_new_blocks = list(peer_blocks.find({"index": {"$gte": divergence_index}}).sort("index"))
+                    for blk in peer_new_blocks:
+                        blocks.insert_one(blk)
+                
+                # 내 블록에만 있던 트랜잭션 → tx_pool로 복원
+                # peer의 모든 트랜잭션 해시 집합                
+                peer_tx_hashes = set()
+                for blk in peer_new_blocks:
+                    for tx in blk["transactions"]:
+                        peer_tx_hashes.add(generate_hash(tx))                
+                
+                for blk in my_forked_blocks:
+                    for tx in blk["transactions"]:
+                        tx_hash = generate_hash(tx)
+                        if tx_hash not in peer_tx_hashes:
+                            tx_pool.insert_one(tx)            
+            
     # 8. 마지막 블록 1분 경과 시 블록 생성
     if display:
         st.subheader("🏗️ [블록 생성 확인]")
         
-    auto_generate_block_if_needed(blocks, tx_pool, block_time_in_min, miner_address = miner_address)
+    create_block(blocks, tx_pool, block_time_in_min, miner_address = miner_address)
 
     if display:
         st.success("🎉 합의 프로토콜 완료")
