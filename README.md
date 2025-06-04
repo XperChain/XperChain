@@ -1,16 +1,15 @@
-## Hi there 👋
+🚀 주요 특징
+🧠 Play to Mining: 행동 기반 채굴
+사용자가 유효한 트랜잭션을 발생시키면, 블록 생성 조건 만족 시 자동으로 블록 생성
 
-<!--
-**XperChain/XperChain** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
+블록 생성 보상 = 사용자 + 블록 생성자에게 50:50 분배
 
-Here are some ideas to get you started:
+보상은 자동 지급되며 사용자에게도 채굴 보상의 절반이 제공됨
 
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
+| 항목       | 설명                                               |
+| -------- | ------------------------------------------------ |
+| 초기 보상    | 100 XPC                                          |
+| 반감기      | **1년마다 절반으로 감소**                                 |
+| 블록 생성 간격 | 설정된 `block_time_in_min` 분                        |
+| 수수료 처리   | **모든 수수료는 블록 생성자가 독점적으로 수령**                     |
+| 사용자 보상   | \*\*보상의 50%\*\*는 트랜잭션을 발생시킨 사용자에게 Airdrop 형태로 지급 |
