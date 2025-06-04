@@ -1,4 +1,4 @@
-🎮 XperChain <a href="xperchain.streamlit.app"> Link </a><br>
+🎮 XperChain <a href="xperchain.streamlit.app" target="new"> Link </a><br>
 - Play to Mining 기반 블록체인 플랫폼 -
 XperChain은 사용자의 행동 기반 블록 생성하는 Play to Mining 개념의 블록체인 플랫폼입니다. 사용자는 행동(예: 트랜잭션 생성, 게임 참여)을 수행함으로써 채굴 보상의 일부를 획득할 수 있습니다. 행동 기반 채굴은 사용자가 행위를 했을 때 블록 생성 조건을 충족하면 자동으로 블록을 생성합니다. 
 
