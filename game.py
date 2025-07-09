@@ -125,11 +125,11 @@ render_custom_card(name, grade, st.session_state.success, st.session_state.failu
 
 btn_style = """
     display: inline-block;
-    width: 40px;
-    height: 40px;
-    font-size: 18px;
+    width: 30px;
+    height: 30px;
+    font-size: 10px;
     text-align: center;
-    line-height: 40px;
+    line-height: 30px;
     margin: 0;
     padding: 0;
 """
