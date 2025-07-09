@@ -79,8 +79,8 @@ st.title("💣 지뢰찾기 게임")
 name = st.text_input("카드 이름", "IronBot")
 
 # 게임 설정
-GRID_SIZE = 5
-NUM_MINES = 5
+GRID_SIZE = 4
+NUM_MINES = 4
 
 # 지뢰 생성 함수
 def generate_board():
@@ -125,11 +125,11 @@ render_custom_card(name, grade, st.session_state.success, st.session_state.failu
 
 btn_style = """
     display: inline-block;
-    width: 30px;
-    height: 30px;
-    font-size: 10px;
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
     text-align: center;
-    line-height: 30px;
+    line-height: 40px;
     margin: 0;
     padding: 0;
 """
