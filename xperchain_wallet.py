@@ -133,22 +133,28 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
 
     st.success(f"🪪 지갑 주소 `{public_key}`")
     st.success(f"💰 잔고 `{st.session_state['balance']:.2f} XPER`")       
-    st.markdown(
-        """
-        <div style="display: flex; justify-content: space-between;">
-            <form action="#">
-                <button style="width:100px;height:40px;" type="submit">🔒 로그아웃</button>
-            </form>
-            <form action="#">
-                <button style="width:100px;height:40px;" type="submit">QR 보기</button>
-            </form>
-            <form action="#">
-                <button style="width:100px;height:40px;" type="submit">🔄 새로고침</button>
-            </form>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    col1, col2, col3 = st.columns([1, 1, 1], gap="small")
+
+    with col1:
+        if st.button("🔒 로그아웃", key="logout_btn"):
+        st.session_state["logged_in_user"] = None
+        st.rerun()
+
+    with col2:
+        if not st.session_state["qr_generated"]:
+            if st.button("QR 보기", key="generate_qr_btn"):
+                st.session_state["qr_generated"] = True
+                st.rerun()
+
+        if st.session_state["qr_generated"]:
+            qr_img = qrcode.make(public_key)
+            buf = BytesIO()
+            qr_img.save(buf, format="PNG")
+            st.image(buf.getvalue(), width=300)    
+          
+    with col3:
+        if st.button("🔄 잔고 새로고침", key="refresh_balance"):
+            st.session_state["balance"] = get_balance(public_key, blocks) 
           
 # 트랜잭션
 # QR 스캔 상태 초기화
