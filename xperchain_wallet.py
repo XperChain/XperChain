@@ -131,10 +131,15 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
     if "qr_generated" not in st.session_state:
         st.session_state["qr_generated"] = False
 
-    col1, col2 = st.columns([3, 1], gap="small")
+        st.success(f"🪪 지갑 주소 `{public_key}`")
+    st.success(f"💰 잔고 `{st.session_state['balance']:.2f} XPER`")       
+    
+    col1, col2, col3 = st.columns([1, 1, 1], gap="small")
 
     with col1:
-        st.success(f"🪪 지갑 주소 `{public_key}`")
+        if st.button("🔒 로그아웃", key="logout_btn"):
+        st.session_state["logged_in_user"] = None
+        st.rerun()
 
     with col2:
         if not st.session_state["qr_generated"]:
@@ -146,24 +151,11 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
             qr_img = qrcode.make(public_key)
             buf = BytesIO()
             qr_img.save(buf, format="PNG")
-            st.image(buf.getvalue(), width=300)
-    
-    # 잔고 표시
-    # 잔고 표시 및 새로고침 버튼
-    col1, col2 = st.columns([3, 1], gap="small")
-    with col1:
-        st.success(f"💰 잔고 `{st.session_state['balance']:.2f} XPER`")       
-    with col2:
-        if st.button("🔄 잔고", key="refresh_balance"):
-            st.session_state["balance"] = get_balance(public_key, blocks)   
-            
-    #st.success(f"💰 잔고 `{st.session_state['balance']:.2f} XPER`")
-    
-    if st.button("🔒 로그아웃", key="logout_btn"):
-        st.session_state["logged_in_user"] = None
-        st.rerun()
-    
-                            
+            st.image(buf.getvalue(), width=300)    
+          
+    with col3:
+        if st.button("🔄 잔고 새로고침", key="refresh_balance"):
+            st.session_state["balance"] = get_balance(public_key, blocks)  
 
 # 트랜잭션
 # QR 스캔 상태 초기화
