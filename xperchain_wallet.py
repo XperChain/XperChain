@@ -131,7 +131,7 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
     if "qr_generated" not in st.session_state:
         st.session_state["qr_generated"] = False
 
-        st.success(f"🪪 지갑 주소 `{public_key}`")
+    st.success(f"🪪 지갑 주소 `{public_key}`")
     st.success(f"💰 잔고 `{st.session_state['balance']:.2f} XPER`")       
     
     col1, col2, col3 = st.columns([2, 1, 1], gap="small")
