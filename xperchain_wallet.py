@@ -137,8 +137,8 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
 
     with col1:
         if st.button("🔒 로그아웃", key="logout_btn"):
-        st.session_state["logged_in_user"] = None
-        st.rerun()
+            st.session_state["logged_in_user"] = None
+            st.rerun()
 
     with col2:
         if not st.session_state["qr_generated"]:
