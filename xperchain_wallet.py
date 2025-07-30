@@ -154,7 +154,7 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
             st.image(buf.getvalue(), width=300)    
           
     with col3:
-        if st.button("🔄 잔고 새로고침", key="refresh_balance"):
+        if st.button("🔄 잔고", key="refresh_balance"):
             st.session_state["balance"] = get_balance(public_key, blocks)  
 
 # 트랜잭션
