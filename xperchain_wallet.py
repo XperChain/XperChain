@@ -143,7 +143,7 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
 
     with col2:
         if not st.session_state["qr_generated"]:
-            if st.button("QR 보기", key="generate_qr_btn"):
+            if st.button("QR", key="generate_qr_btn"):
                 st.session_state["qr_generated"] = True
                 st.rerun()
 
