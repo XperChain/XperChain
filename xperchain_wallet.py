@@ -21,20 +21,24 @@ KST = timezone(timedelta(hours=9))  # KST timezone
 
 # DB 설정
 MONGO_URL = st.secrets["mongodb"]["uri"]
+
 client = MongoClient(MONGO_URL)
 db = client["blockchain_db"]
 blocks = db["blocks"]
-tx_pool = db["transactions"]
+transactions = db["transactions"]
+transaction_pool = db["transaction_pool"]
 users = db["users"]
 peers = db['peers']  # p2p network will be implemented
 
 # miner wallet
-miner_wallet = st.secrets["miner"]["public_key"]
-miner_key = st.secrets["miner"]["private_key"]
+miner_wallet = '38887c137a1dc54e0f083a98844c36d5f8ca7fd4e5c7ba603067a2fdc117209f003d156d462c59dacdce58c4451ccd6a5a2f2a962fdcfb93a015f09d0fbc9c2d'
+
+BLOCK_INTERVAL = 6
 
 # 초기 상태
 if "logged_in_user" not in st.session_state:
     st.session_state["logged_in_user"] = None
+
 if "balance" not in st.session_state:
     st.session_state["balance"] = 0.0
 
@@ -89,10 +93,7 @@ if not st.session_state["logged_in_user"]:
                         "password_hash": utils.hash_password(password),
                         "public_key": pub,
                         "private_key": priv
-                    })  
-                    if not blocks.find_one():
-                        create_block(blocks, tx_pool, block_time_in_min, miner_address=pub, display=False)
-                        st.success("🎉 Genesis Block을 채굴했습니다.")    
+                    })                      
                     st.success("🎉 회원가입 성공! 이제 로그인 해보세요.")                  
 
         elif auth_mode == "로그인":
@@ -100,13 +101,11 @@ if not st.session_state["logged_in_user"]:
                 user = users.find_one({"username": username})
                 if not user or user["password_hash"] != utils.hash_password(password):
                     st.error("❌ 사용자 또는 비밀번호가 틀렸습니다.")
-                else:                                      
-                    consensus_algorithm(blocks, peers, tx_pool, block_time_in_min, display=False)
-                    #consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = True)
+                else:                                                          
                     
                     st.session_state["logged_in_user"] = user
                     st.session_state["balance"] = get_balance(user["public_key"], blocks)
-                    st.success(f"환영합니다, {username}님!")
+                    st.success(f"환영합니다, {username}님!")                    
                     st.rerun()
 
 if not st.session_state["logged_in_user"]:
@@ -117,21 +116,29 @@ user = st.session_state["logged_in_user"]
 public_key = user["public_key"]
 private_key = user["private_key"]
 
+# col_spacer, col_button = st.columns([8, 2])
+# with col_button:
+#     if st.button("🔄 새로 고침"):
+#         st.session_state["clear_inputs"] = True
+#         st.session_state["balance"] = get_balance(public_key, blocks)            
+#         st.rerun()
+    
 with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
     st.markdown(f"👤 사용자: `{user['username']}`")
-
+    
+    
     # QR 생성 상태 관리
     if "qr_generated" not in st.session_state:
         st.session_state["qr_generated"] = False
 
-    col1, col2 = st.columns([4, 1], gap="small")
+    col1, col2 = st.columns([3, 1], gap="small")
 
     with col1:
-        st.success(f"🪪 지갑 공개키(주소): {public_key}")
+        st.success(f"🪪 지갑 주소 `{public_key}`")
 
     with col2:
         if not st.session_state["qr_generated"]:
-            if st.button("📤 QR 생성", key="generate_qr_btn"):
+            if st.button("QR 보기", key="generate_qr_btn"):
                 st.session_state["qr_generated"] = True
                 st.rerun()
 
@@ -141,20 +148,22 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
             qr_img.save(buf, format="PNG")
             st.image(buf.getvalue(), width=300)
     
+    # 잔고 표시
     # 잔고 표시 및 새로고침 버튼
-    col1, col2 = st.columns([2, 5], gap="small")
+    col1, col2 = st.columns([3, 1], gap="small")
     with col1:
-        st.success(f"💰 잔고: {st.session_state['balance']:.2f}")        
+        st.success(f"💰 잔고 `{st.session_state['balance']:.2f} XPER`")       
     with col2:
-        if st.button("🔄 잔고 새로고침", key="refresh_balance"):
-            st.session_state["balance"] = get_balance(public_key, blocks)            
-
-    # # 잔고 표시
-    # st.success(f"💰 잔고: {st.session_state['balance']:.2f}")
+        if st.button("🔄 잔고", key="refresh_balance"):
+            st.session_state["balance"] = get_balance(public_key, blocks)   
+            
+    #st.success(f"💰 잔고 `{st.session_state['balance']:.2f} XPER`")
     
     if st.button("🔒 로그아웃", key="logout_btn"):
         st.session_state["logged_in_user"] = None
         st.rerun()
+    
+                            
 
 # 트랜잭션
 # QR 스캔 상태 초기화
@@ -171,11 +180,16 @@ if "clear_inputs" not in st.session_state:
 recipient_value = "" if st.session_state.clear_inputs else st.session_state.get("recipient_input", "")
 amount_value = 0.0 if st.session_state.clear_inputs else st.session_state.get("amount_input", 0.0)
 
-with st.expander("📤 트랜잭션 전송", expanded=True):
+with st.expander("📤 이체", expanded=True):
     col1, col2 = st.columns([4, 1], gap="small")    
     with col1:
-        # 입력 필드     
-        recipient = st.text_input("📨 받는 사람의 공개키(주소)", value=recipient_value, key="recipient_input")
+        # 입력 필드    
+        if st.session_state.get("clear_inputs", False):
+            st.session_state["recipient_input"] = ""  # ✅ 입력창 초기화
+            st.session_state["clear_inputs"] = False
+            
+        recipient = st.text_input("📨 받는 지갑 주소", value=recipient_value, key="recipient_input")
+        
         
     with col2:
         st.write("")
@@ -201,18 +215,18 @@ with st.expander("📤 트랜잭션 전송", expanded=True):
                 st.rerun()
             else:
                 st.error("❌ QR 코드 인식에 실패했습니다.")
-    amount = st.number_input("💸 이체 금액", min_value=0.0, value=amount_value, key="amount_input")  
+    amount = st.number_input("💸 금액", min_value=0.0, value=amount_value, key="amount_input")  
     
-    st.info(f"💰 전송 수수료: {transaction_fee:.2f}")        
-    if st.button("➕ 트랜잭션 전송(이체)"):
+    st.info(f"💰 수수료: `{transaction_fee:.2f} XPER`")        
+    if st.button("➕ 이체하기"):
         recipient_value = st.session_state.get("recipient_input", "")
         amount_value = st.session_state.get("amount_input", 0.0)
         if recipient_value.strip() == "":
-            st.warning("받는 사람의 공개키를 입력하세요.")
+            st.warning("받는 지갑의 주소를 입력하세요.")
         elif amount_value <= 0:
             st.warning("이체 금액을 입력하세요.")
         elif amount_value + transaction_fee > st.session_state["balance"]:
-            st.error("❌ 잔고 부족 (수수료 포함)")
+            st.error("❌ 잔고 부족(수수료 포함)")
         else:            
             tx_data = {
                 "sender": public_key,
@@ -222,40 +236,23 @@ with st.expander("📤 트랜잭션 전송", expanded=True):
                 "timestamp": time.time()
             }
             tx_data["signature"] = sign_transaction(private_key, tx_data)
-            tx_pool.insert_one(tx_data)                
-            #consensus_protocol(blocks, peers, tx_pool, block_time_in_min, miner_wallet, display = True)
-            st.success("✅ 트랜잭션이 추가되었습니다.")     
+            transaction_pool.insert_one(tx_data)                            
+            st.success("✅ 이체 트랜잭션이 처리중입니다...")     
                         
-            # 입력값 초기화용 플래그 활성화            
+            # 입력값 초기화용 플래그 활성화         
+            time.sleep(BLOCK_INTERVAL)  # 일정 시간 대기 (주의: UI 멈춤)
             st.session_state["clear_inputs"] = True
-            
-            # 마이닝 가능 여부 확인
-            last_block = blocks.find_one(sort=[("index", -1)])
-            last_block_timestamp = last_block["timestamp"] if last_block else 0 
-            result = verify_blocktime(timestamp_after = time.time(), timestamp_before = last_block_timestamp, block_time_in_min = block_time_in_min)
-
-            if result:
-                new_index = last_block["index"] + 1 if last_block else 1
-                reward = get_block_reward(block_height = new_index)
-                airdrop_value = reward * 0.5 # 채굴 보상의 50%를 지급
-                tx_data = {
-                    "sender": miner_wallet,
-                    "recipient": public_key,
-                    "amount": airdrop_value,
-                    "fee": transaction_fee,
-                    "timestamp": time.time()
-                }
-                tx_data["signature"] = sign_transaction(miner_key, tx_data)
-                tx_pool.insert_one(tx_data)  
-                create_block(blocks, tx_pool, block_time_in_min, miner_address = miner_wallet)                    
-                st.session_state["balance"] = get_balance(public_key, blocks) # 화면에 표시되는 잔고 업데이트
-                st.write(f"⛏️ 블록 채굴을 통해 {airdrop_value}의 보상을 받았습니다.")    
-                time.sleep(3)  # 3초 대기
-            
+            st.session_state["balance"] = get_balance(public_key, blocks)            
             st.rerun()                        
-            
-with st.expander("📥 트랜잭션 풀", expanded=True):
-    txs = list(tx_pool.find().sort("timestamp", -1))
+
+with st.expander("📥 이체 내역", expanded=True):
+    # 내 이체 내역만 조회 (sender 또는 recipient가 public_key)
+    txs = list(transactions.find({
+        "$or": [
+            {"sender": public_key},
+            {"recipient": public_key}
+        ]
+    }).sort("timestamp", -1))
 
     if txs:
         table_data = []
@@ -283,7 +280,6 @@ with st.expander("📥 트랜잭션 풀", expanded=True):
                 "받는 사람": recipient[:5] + "...",
                 "금액": f"{sign}{amount:.2f}" if sign else f"{amount:.2f}",
                 "수수료": f"{sign}{fee:.2f}" if sign else f"{fee:.2f}",
-                #"총합": f"{sign}{total:.2f}" if sign else f"{total:.2f}",                
                 "시간": time_str,
                 "구분": direction
             })
@@ -297,73 +293,7 @@ with st.expander("📥 트랜잭션 풀", expanded=True):
                 return 'color: red; font-weight: bold'
             return ''
 
-        #styled_df = df.style.applymap(highlight_signed, subset=["금액", "수수료", "총합"])
         styled_df = df.style.applymap(highlight_signed, subset=["금액", "수수료"])
         st.dataframe(styled_df, use_container_width=True)
     else:
-        st.info("트랜잭션 풀이 비어 있습니다.")
-
-
-with st.expander("📚 전체 거래 내역", expanded=False):
-    personal_txs = []
-    for blk in blocks.find().sort("index", -1):
-        for tx in blk.get("transactions", []):
-            sender = tx.get("sender", "")
-            recipient = tx.get("recipient", "")
-            amount = tx.get("amount", 0.0)
-            fee = tx.get("fee", 0.0)
-            total = amount + fee
-            ts = tx.get("timestamp")
-            time_str = datetime.fromtimestamp(ts, tz=KST).strftime('%Y-%m-%d %H:%M:%S') if ts else "없음"
-
-            # 내 공개키 관련된 트랜잭션만 추출
-            if public_key not in (sender, recipient):
-                continue
-
-            if sender == public_key:
-                sign = "-"
-                direction = "출금"
-            elif recipient == public_key:
-                sign = "+"
-                direction = "입금"
-            else:
-                sign = ""
-                direction = ""
-            if direction=="입금":
-                personal_txs.append({
-                    "블록": blk["index"],
-                    "보낸 사람": sender[:5] + "...",
-                    "받는 사람": recipient[:5] + "...",
-                    "금액": f"{sign}{amount:.2f}",
-                    "수수료": "",
-                    #"총합": f"{sign}{total:.2f}",
-                    "시간": time_str,
-                    "구분": direction
-                })
-            else:    
-                personal_txs.append({
-                    "블록": blk["index"],
-                    "보낸 사람": sender[:5] + "...",
-                    "받는 사람": recipient[:5] + "...",
-                    "금액": f"{sign}{amount:.2f}",
-                    "수수료": f"{sign}{fee:.2f}",
-                    #"총합": f"{sign}{total:.2f}",
-                    "시간": time_str,
-                    "구분": direction
-                })
-
-    if personal_txs:
-        df = pd.DataFrame(personal_txs)
-
-        def highlight_direction(val):
-            if isinstance(val, str) and val.startswith('+'):
-                return 'color: green; font-weight: bold'
-            elif isinstance(val, str) and val.startswith('-'):
-                return 'color: red; font-weight: bold'
-            return ''
-
-        #styled_df = df.style.applymap(highlight_direction, subset=["금액", "수수료", "총합"])
-        styled_df = df.style.applymap(highlight_direction, subset=["금액", "수수료"])
-        st.dataframe(styled_df, use_container_width=True)
-    else:
-        st.info("📭 내 거래 기록이 없습니다.")
+        st.info("이체 내역이 없습니다.")
