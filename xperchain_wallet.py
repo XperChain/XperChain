@@ -181,9 +181,7 @@ with st.expander("📤 이체", expanded=True):
             
         recipient = st.text_input("📨 받는 지갑 주소", value=recipient_value, key="recipient_input")        
         
-    with col2:
-        st.write("")
-        st.write("")
+    with col2:        
         if st.button("📷 QR 스캔", key="qr_scan_btn"):
             st.session_state["qr_scan_requested"] = True
 
