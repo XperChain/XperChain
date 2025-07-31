@@ -24,15 +24,13 @@ MONGO_URL = st.secrets["mongodb"]["uri"]
 
 client = MongoClient(MONGO_URL)
 db = client["blockchain_db"]
-blocks = db["blocks"]
 transactions = db["transactions"]
 transaction_pool = db["transaction_pool"]
+accounts = db["accounts"]
 users = db["users"]
 peers = db['peers']  # p2p network will be implemented
 
-# miner wallet
-miner_wallet = '9f6f644a29ca3aa943475cfc63aaa68b2d44947141ac48c9e21b7ac1234b2cf8d3f04fccae5be5151b6848c8446b136f4591202661750cf8055780264ee37958'
-
+miner_wallet = st.secrets["miner"]["public_key"]
 BLOCK_INTERVAL = 6
 
 # 초기 상태
@@ -104,7 +102,7 @@ if not st.session_state["logged_in_user"]:
                 else:                                                          
                     
                     st.session_state["logged_in_user"] = user
-                    st.session_state["balance"] = get_balance(user["public_key"], blocks)
+                    st.session_state["balance"] = get_balance(user["public_key"], accounts)
                     st.success(f"환영합니다, {username}님!")                    
                     st.rerun()
 
@@ -120,7 +118,7 @@ private_key = user["private_key"]
 # with col_button:
 #     if st.button("🔄 새로 고침"):
 #         st.session_state["clear_inputs"] = True
-#         st.session_state["balance"] = get_balance(public_key, blocks)            
+#         st.session_state["balance"] = get_balance(public_key, accounts)            
 #         st.rerun()
     
 with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
@@ -130,9 +128,10 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
     # QR 생성 상태 관리
     if "qr_generated" not in st.session_state:
         st.session_state["qr_generated"] = False
-
+    
     st.success(f"🪪 지갑 주소 `{public_key}`")
-    st.success(f"💰 잔고 `{st.session_state['balance']:.2f} XPER`")       
+    st.success(f"💰 잔고 `{st.session_state['balance']:,.2f} XPER`")       
+    
     col1, col2, col3 = st.columns([1, 1, 1], gap="small")
 
     with col1:
@@ -153,16 +152,17 @@ with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
             st.image(buf.getvalue(), width=300)    
           
     with col3:
-        if st.button("🔄 잔고 새로고침", key="refresh_balance"):
-            st.session_state["balance"] = get_balance(public_key, blocks) 
-          
+        if st.button("🔄 새로고침", key="refresh_balance"):
+            st.session_state["balance"] = get_balance(public_key, accounts)   
+            st.session_state["qr_generated"] = False
+            st.rerun()            
+
 # 트랜잭션
 # QR 스캔 상태 초기화
 if "qr_scan_requested" not in st.session_state:
     st.session_state["qr_scan_requested"] = False
 if "recipient_scanned" not in st.session_state:
     st.session_state["recipient_scanned"] = ""
-
     
 # 초기화용 플래그
 if "clear_inputs" not in st.session_state:
@@ -179,8 +179,7 @@ with st.expander("📤 이체", expanded=True):
             st.session_state["recipient_input"] = ""  # ✅ 입력창 초기화
             st.session_state["clear_inputs"] = False
             
-        recipient = st.text_input("📨 받는 지갑 주소", value=recipient_value, key="recipient_input")
-        
+        recipient = st.text_input("📨 받는 지갑 주소", value=recipient_value, key="recipient_input")        
         
     with col2:
         st.write("")
@@ -233,7 +232,7 @@ with st.expander("📤 이체", expanded=True):
             # 입력값 초기화용 플래그 활성화         
             time.sleep(BLOCK_INTERVAL)  # 일정 시간 대기 (주의: UI 멈춤)
             st.session_state["clear_inputs"] = True
-            st.session_state["balance"] = get_balance(public_key, blocks)            
+            st.session_state["balance"] = get_balance(public_key, accounts)            
             st.rerun()                        
 
 with st.expander("📥 이체 내역", expanded=True):
@@ -243,7 +242,7 @@ with st.expander("📥 이체 내역", expanded=True):
             {"sender": public_key},
             {"recipient": public_key}
         ]
-    }).sort("timestamp", -1))
+    }).sort("timestamp", -1).limit(100))  # 최대 100개만 불러오기기
 
     if txs:
         table_data = []
