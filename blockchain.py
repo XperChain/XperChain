@@ -10,7 +10,7 @@ import hashlib, json, base64
 from ecdsa import VerifyingKey, VerifyingKey, BadSignatureError, SigningKey, SECP256k1
 
 block_time_in_min = 1   # 블록 생성 주기(분)
-transaction_fee = 1     # 거래 수수료
+transaction_fee = 0.01     # 거래 수수료
 
 # 블록 해시 함수
 def generate_hash(contents):
@@ -63,22 +63,27 @@ def generate_wallet():
 
     return public_key, private_key
 
-# 잔고 확인 함수
-def get_balance(address, blocks):
-    balance = 0
-    for blk in blocks.find().sort("index"):
-        for tx in blk["transactions"]:
-            if tx["sender"] == address:
-                balance = balance - tx["amount"] - tx["fee"]
-            if tx["recipient"] == address:
-                balance += tx["amount"]
-    return balance
+# # 잔고 확인 함수
+# def get_balance_from_blockchain(address, blocks):
+#     balance = 0
+#     for blk in blocks.find().sort("index"):
+#         for tx in blk["transactions"]:
+#             if tx["sender"] == address:
+#                 balance -= tx["amount"]
+#             if tx["recipient"] == address:
+#                 balance += tx["amount"]
+#     return balance
 
+def get_balance(address, accounts):
+    account = accounts.find_one({"address": address})
+    return account["balance"] if account else 0.0
+
+# 블록 보상 계산 함수
 def get_block_reward(block_height):
-    R0 = 100
-    blocks_per_year = int(365 * 24 * 60 * 4 / block_time_in_min) # 반감기 4년
-    halvings = block_height // blocks_per_year
-    reward = R0 // (2 ** halvings)
+    R0 = 10000                   # 초기 보상 
+    halving_block = 1_000_000    # 반감기
+    decay_factor = math.log(2) / halving_block 
+    reward = round(R0 * math.exp(-decay_factor * block_height))
     return max(0, reward)
 
 # 블록 생성 시간 검증 함수
@@ -186,108 +191,6 @@ def create_block(blocks, tx_pool, block_time_in_min, miner_address=None, display
         if display:
             st.info("⏳ 블록 생성 조건(시간간)이 충족되지 않았습니다.")
 
-            
-def consensus_algorithm(blocks, peers, tx_pool, block_time_in_min, display=False):
-    if display:
-        st.subheader("🔍 [블록체인 검증 시작]")
-
-    all_blocks = list(blocks.find().sort("index", 1))
-    prev_timestamp = 0
-    prev_hash = "0"
-    balances = {}
-    delete_from_index = None
-
-    for blk in all_blocks:
-        index = blk["index"]
-        timestamp = blk["timestamp"]
-        transactions = blk.get("transactions", [])
-        current_hash = blk.get("hash")
-
-        # 1. 블록 생성 주기 검증
-        if index > 1 and timestamp - prev_timestamp < block_time_in_min * 60:
-            delete_from_index = index
-            if display:
-                st.error(f"❌ 블록 #{index} 생성 주기 미만: 삭제 예정")
-            break
-
-        # 2. 블록 해시 검증
-        expected_hash = generate_hash({
-            "index": index,
-            "timestamp": timestamp,
-            "transactions": transactions,
-            "previous_hash": blk["previous_hash"]
-        })
-        if expected_hash != current_hash:
-            delete_from_index = index
-            if display:
-                st.error(f"❌ 블록 #{index} 해시 불일치: 삭제 예정")
-            break
-
-        # 3. 트랜잭션 검증
-        system_txs = [tx for tx in transactions if tx.get("sender") == "SYSTEM"]
-        normal_txs = [tx for tx in transactions if tx.get("sender") != "SYSTEM"]
-
-        # SYSTEM 트랜잭션이 1개 초과되면 오류
-        if len(system_txs) > 1:
-            delete_from_index = index
-            if display:
-                st.error(f"❌ 블록 #{index} SYSTEM 트랜잭션이 1개를 초과함")
-            break
-
-        # 보상 검증
-        if system_txs:
-            reward_expected = get_block_reward(index)
-            total_fees = sum(tx.get("fee", 0.0) for tx in normal_txs)
-            reward_actual = system_txs[0].get("amount", 0.0)
-
-            if reward_actual != reward_expected + total_fees:
-                delete_from_index = index
-                if display:
-                    st.error(f"❌ 블록 #{index} SYSTEM 보상 불일치 (예상: {reward_expected + total_fees}, 실제: {reward_actual})")
-                break
-
-        # 일반 트랜잭션 처리
-        for tx in normal_txs:
-            sender = tx.get("sender")
-            recipient = tx.get("recipient")
-            amount = tx.get("amount", 0.0)
-            fee = tx.get("fee", 0.0)
-
-            if not verify_signature(tx):
-                delete_from_index = index
-                if display:
-                    st.error(f"❌ 블록 #{index} 트랜잭션 서명 오류")
-                break
-
-            if balances.get(sender, 0) < amount + fee:
-                delete_from_index = index
-                if display:
-                    st.error(f"❌ 블록 #{index} 잔고 부족 오류")
-                break
-
-            balances[sender] -= amount + fee
-            balances[recipient] = balances.get(recipient, 0) + amount
-
-        # SYSTEM 수령자에게 보상 추가
-        if system_txs:
-            recipient = system_txs[0].get("recipient")
-            reward = system_txs[0].get("amount", 0.0)
-            balances[recipient] = balances.get(recipient, 0) + reward
-
-        if delete_from_index:
-            break
-
-        prev_timestamp = timestamp
-        prev_hash = current_hash
-
-    # 오류 블록 삭제
-    if delete_from_index is not None:
-        blocks.delete_many({"index": {"$gte": delete_from_index}})
-        if display:
-            st.warning(f"⚠️ 블록 #{delete_from_index}부터 이후 블록 모두 삭제됨")
-
-
-            
 # 합의 알고리즘
 # [사용자 버튼 클릭]
 #     ↓
