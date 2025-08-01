@@ -1,17 +1,13 @@
 import streamlit as st
 from pymongo import MongoClient
-import secrets
-
-import hashlib, json
+from datetime import datetime, timedelta, timezone
 import time
 import pandas as pd
 from io import BytesIO
 from PIL import Image
-from datetime import datetime, timedelta, timezone
 import cv2
 import numpy as np
 import qrcode
-import base64
 from ecdsa import SigningKey, SECP256k1
 
 from blockchain import *
@@ -19,8 +15,7 @@ import utils
 
 KST = timezone(timedelta(hours=9))  # KST timezone
 
-# DB 설정
-MONGO_URL = st.secrets["mongodb"]["uri"]
+MONGO_URL = st.secrets["mongodb"]["uri"]  # DB 설정
 
 client = MongoClient(MONGO_URL)
 db = client["blockchain_db"]
@@ -30,12 +25,10 @@ accounts = db["accounts"]
 users = db["users"]
 peers = db['peers']  # p2p network will be implemented
 
-miner_wallet = st.secrets["miner"]["public_key"]
 BLOCK_INTERVAL = 6
 
-# 초기 상태
 if "logged_in_user" not in st.session_state:
-    st.session_state["logged_in_user"] = None
+    st.session_state["logged_in_user"] = None   # 처음 접속 시 로그인 모드 진입을 위한 변수
 
 if "balance" not in st.session_state:
     st.session_state["balance"] = 0.0
@@ -43,20 +36,15 @@ if "balance" not in st.session_state:
 # 로그인 및 회원가입
 if not st.session_state["logged_in_user"]:
     with st.expander("로그인", expanded=True):
-
-        # 이전 모드 기억용 변수
         if "auth_mode_last" not in st.session_state:
-            st.session_state["auth_mode_last"] = "로그인"
+            st.session_state["auth_mode_last"] = "로그인"   # 모드 기억용 변수
 
-        auth_mode = st.radio("", ["로그인", "회원가입"], horizontal=True, key="auth_mode")
-
-        # 모드가 바뀌면 입력 필드 초기화
-        if auth_mode != st.session_state["auth_mode_last"]:
+        auth_mode = st.radio("", ["로그인", "회원가입"], horizontal=True, key="auth_mode")        
+        if auth_mode != st.session_state["auth_mode_last"]:  # 모드가 변했으면 입력 필드 초기화
             st.session_state["auth_mode_last"] = auth_mode
             st.session_state["username"] = ""
             st.session_state["password"] = ""
-
-        # 입력 필드 with 세션 상태 연결
+        
         username = st.text_input("👤 사용자", key="username")
         password = st.text_input("🔑 비밀번호", type="password", key="password")
 
@@ -72,9 +60,8 @@ if not st.session_state["logged_in_user"]:
                     st.warning("비밀번호는 최소 8자리 이상이어야 합니다.")
                 elif users.find_one({"username": username}):
                     st.error("이미 존재하는 사용자입니다.")
-                else:
-                    # 개인키 수동 입력 여부 확인
-                    if private_key_input.strip():
+                else:                    
+                    if private_key_input.strip(): # 개인키 입력 여부 확인
                         try:
                             sk = SigningKey.from_string(bytes.fromhex(private_key_input), curve=SECP256k1)
                             pub = sk.get_verifying_key().to_string().hex()
@@ -83,7 +70,7 @@ if not st.session_state["logged_in_user"]:
                             st.error(f"❌ 개인키 형식 오류: {e}")
                             st.stop()
                     else:
-                        # 자동 생성
+                        # 개인키 및 공개키 자동 생성
                         pub, priv = generate_wallet()
 
                     users.insert_one({
@@ -111,77 +98,61 @@ if not st.session_state["logged_in_user"]:
     
 # 사용자 세션 정보
 user = st.session_state["logged_in_user"]
-public_key = user["public_key"]
+public_key = user["public_key"]  # 공개키가 지갑 주소 역할을 함
 private_key = user["private_key"]
-
-# col_spacer, col_button = st.columns([8, 2])
-# with col_button:
-#     if st.button("🔄 새로 고침"):
-#         st.session_state["clear_inputs"] = True
-#         st.session_state["balance"] = get_balance(public_key, accounts)            
-#         st.rerun()
     
-with st.expander("📂 내 지갑 정보", expanded=True):  # 기본 펼쳐짐
-    st.markdown(f"👤 사용자: `{user['username']}`")
-    
-    
-    # QR 생성 상태 관리
-    if "qr_generated" not in st.session_state:
-        st.session_state["qr_generated"] = False
-    
+with st.expander("📂 내 지갑 정보", expanded=True):  
+    st.markdown(f"👤 사용자: `{user['username']}`")        
     st.success(f"🪪 지갑 주소 `{public_key}`")
     st.success(f"💰 잔고 `{st.session_state['balance']:,.2f} XPER`")       
     
     col1, col2, col3 = st.columns([1, 1, 1], gap="small")
-
     with col1:
         if st.button("🔒 로그아웃", key="logout_btn"):
             st.session_state["logged_in_user"] = None
             st.rerun()
-
     with col2:
+        if "qr_generated" not in st.session_state:  # QR 생성 상태 관리
+            st.session_state["qr_generated"] = False            
         if not st.session_state["qr_generated"]:
             if st.button("QR 보기", key="generate_qr_btn"):
                 st.session_state["qr_generated"] = True
                 st.rerun()
-
         if st.session_state["qr_generated"]:
             qr_img = qrcode.make(public_key)
             buf = BytesIO()
             qr_img.save(buf, format="PNG")
-            st.image(buf.getvalue(), width=300)    
-          
+            st.image(buf.getvalue(), width=300)              
     with col3:
         if st.button("🔄 새로고침", key="refresh_balance"):
             st.session_state["balance"] = get_balance(public_key, accounts)   
             st.session_state["qr_generated"] = False
             st.rerun()            
 
-# 트랜잭션
 # QR 스캔 상태 초기화
 if "qr_scan_requested" not in st.session_state:
     st.session_state["qr_scan_requested"] = False
+    
 if "recipient_scanned" not in st.session_state:
     st.session_state["recipient_scanned"] = ""
     
-# 초기화용 플래그
-if "clear_inputs" not in st.session_state:
-    st.session_state["clear_inputs"] = False
+if "clear_inputs" not in st.session_state:   # 초기화용
+    st.session_state["clear_inputs"] = False  
 
 recipient_value = "" if st.session_state.clear_inputs else st.session_state.get("recipient_input", "")
 amount_value = 0.0 if st.session_state.clear_inputs else st.session_state.get("amount_input", 0.0)
 
 with st.expander("📤 이체", expanded=True):
     col1, col2 = st.columns([4, 1], gap="small")    
-    with col1:
-        # 입력 필드    
+    with col1:        
         if st.session_state.get("clear_inputs", False):
-            st.session_state["recipient_input"] = ""  # ✅ 입력창 초기화
-            st.session_state["clear_inputs"] = False
+            st.session_state["recipient_input"] = ""  
+            st.session_state["clear_inputs"] = False 
             
-        recipient = st.text_input("📨 받는 지갑 주소", value=recipient_value, key="recipient_input")        
+        recipient = st.text_input("📨 받는 지갑 주소", value=recipient_value, key="recipient_input") 
         
-    with col2:        
+    with col2:    
+        st.markdown("")
         if st.button("📷 QR 스캔", key="qr_scan_btn"):
             st.session_state["qr_scan_requested"] = True
 
@@ -203,8 +174,8 @@ with st.expander("📤 이체", expanded=True):
                 st.rerun()
             else:
                 st.error("❌ QR 코드 인식에 실패했습니다.")
-    amount = st.number_input("💸 금액", min_value=0.0, value=amount_value, key="amount_input")  
-    
+                
+    amount = st.number_input("💸 금액", min_value=0.0, value=amount_value, key="amount_input")      
     st.info(f"💰 수수료: `{transaction_fee:.2f} XPER`")        
     if st.button("➕ 이체하기"):
         recipient_value = st.session_state.get("recipient_input", "")
@@ -228,19 +199,18 @@ with st.expander("📤 이체", expanded=True):
             st.success("✅ 이체 트랜잭션이 처리중입니다...")     
                         
             # 입력값 초기화용 플래그 활성화         
-            time.sleep(BLOCK_INTERVAL)  # 일정 시간 대기 (주의: UI 멈춤)
+            time.sleep(BLOCK_INTERVAL)  # 블록 생성 시간 동안 대기
             st.session_state["clear_inputs"] = True
             st.session_state["balance"] = get_balance(public_key, accounts)            
             st.rerun()                        
 
-with st.expander("📥 이체 내역", expanded=True):
-    # 내 이체 내역만 조회 (sender 또는 recipient가 public_key)
+with st.expander("📥 이체 내역", expanded=True):    
     txs = list(transactions.find({
         "$or": [
             {"sender": public_key},
             {"recipient": public_key}
         ]
-    }).sort("timestamp", -1).limit(100))  # 최대 100개만 불러오기기
+    }).sort("timestamp", -1).limit(100))  # 최대 100개만 불러오기
 
     if txs:
         table_data = []
@@ -252,7 +222,7 @@ with st.expander("📥 이체 내역", expanded=True):
             total = amount + fee
             time_str = datetime.fromtimestamp(tx["timestamp"], tz=KST).strftime('%Y-%m-%d %H:%M:%S')
 
-            # 입출금 방향 계산
+            # 입출금 및 부호(+, -) 결정
             if sender == public_key:
                 sign = "-"
                 direction = "출금"
