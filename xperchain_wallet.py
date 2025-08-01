@@ -233,14 +233,15 @@ with st.expander("📥 이체 내역", expanded=True):
                 sign = ""
                 direction = "기타"
 
-            table_data.append({
+            row = {
                 "보낸 사람": sender[:5] + "...",
                 "받는 사람": recipient[:5] + "...",
                 "금액": f"{sign}{amount:.2f}" if sign else f"{amount:,.2f}",
-                "수수료": f"{fee:.2f}",
                 "시간": time_str,
                 "구분": direction
-            })
+            }            
+            row["수수료"] = f"{sign}{fee:.2f}" if direction == "출금" else f"{fee:.2f}"
+            table_data.append(row)  
 
         df = pd.DataFrame(table_data)
 
