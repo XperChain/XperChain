@@ -124,7 +124,7 @@ with st.expander("⛓️ 블록체인 탐색기", expanded=True):
                 <table style="width:100%; border-collapse: collapse;" border="1">
                     <thead>
                         <tr style="background-color:#f2f2f2;">
-                            <th style="text-align: center;">보낸 사람</th><th style="text-align: center;">받는 사람</th><th style="text-align: center;">금액</th><th style="text-align: center;">수수료</th><th style="text-align: center;">합계계</th>
+                            <th style="text-align: center;">보낸 사람</th><th style="text-align: center;">받는 사람</th><th style="text-align: center;">금액</th><th style="text-align: center;">수수료</th><th style="text-align: center;">합계</th>
                         </tr>
                     </thead>
                     <tbody>"""
