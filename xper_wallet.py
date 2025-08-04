@@ -216,7 +216,8 @@ with st.expander("📥 이체 내역", expanded=True):
     if txs:
         table_html = """
         <h4>📋 이체 내역</h4>
-        <table style="width:100%; border-collapse: collapse;" border="1">
+        <div style="overflow-x: auto;">
+        <table style="min-width:600px; width:100%; border-collapse: collapse;" border="1">
             <thead>
                 <tr style="background-color:#f2f2f2;">
                     <th>보낸 사람</th>
@@ -234,7 +235,6 @@ with st.expander("📥 이체 내역", expanded=True):
             recipient = tx.get("recipient", "")
             amount = tx.get("amount", 0.0)
             fee = tx.get("fee", 0.0)
-            total = amount + fee
             time_str = datetime.fromtimestamp(tx["timestamp"], tz=KST).strftime('%Y-%m-%d %H:%M:%S')
 
             # 입출금 여부
@@ -249,7 +249,6 @@ with st.expander("📥 이체 내역", expanded=True):
                 amount_str = f'<span style="color:green;">{sign}{amount:,.2f}</span>'
                 fee_str = f'<span style="color:green;">{fee:,.2f}</span>'
             else:
-                sign = ""
                 direction = "기타"
                 amount_str = f"{amount:,.2f}"
                 fee_str = f"{fee:,.2f}"
@@ -264,7 +263,7 @@ with st.expander("📥 이체 내역", expanded=True):
                     <td>{direction}</td>
                 </tr>"""
 
-        table_html += "</tbody></table>"
+        table_html += "</tbody></table></div>"
 
         st.markdown(table_html, unsafe_allow_html=True)
     else:
