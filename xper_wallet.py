@@ -27,6 +27,7 @@ peers = db['peers']  # p2p network will be implemented
 
 BLOCK_INTERVAL = 6
 
+
 if "logged_in_user" not in st.session_state:
     st.session_state["logged_in_user"] = None   # 처음 접속 시 로그인 모드 진입을 위한 변수
 
@@ -210,10 +211,24 @@ with st.expander("📥 이체 내역", expanded=True):
             {"sender": public_key},
             {"recipient": public_key}
         ]
-    }).sort("timestamp", -1).limit(100))  # 최대 100개만 불러오기
+    }).sort("timestamp", -1).limit(100))
 
     if txs:
-        table_data = []
+        table_html = """
+        <h4>📋 이체 내역</h4>
+        <table style="width:100%; border-collapse: collapse;" border="1">
+            <thead>
+                <tr style="background-color:#f2f2f2;">
+                    <th>보낸 사람</th>
+                    <th>받는 사람</th>
+                    <th>금액</th>
+                    <th>수수료</th>
+                    <th>시간</th>
+                    <th>구분</th>
+                </tr>
+            </thead>
+            <tbody>"""
+
         for tx in txs:
             sender = tx.get("sender", "")
             recipient = tx.get("recipient", "")
@@ -222,37 +237,35 @@ with st.expander("📥 이체 내역", expanded=True):
             total = amount + fee
             time_str = datetime.fromtimestamp(tx["timestamp"], tz=KST).strftime('%Y-%m-%d %H:%M:%S')
 
-            # 입출금 및 부호(+, -) 결정
+            # 입출금 여부
             if sender == public_key:
                 sign = "-"
                 direction = "출금"
+                amount_str = f'<span style="color:red;">{sign}{amount:,.2f}</span>'
+                fee_str = f'<span style="color:red;">{sign}{fee:,.2f}</span>'
             elif recipient == public_key:
                 sign = "+"
                 direction = "입금"
+                amount_str = f'<span style="color:green;">{sign}{amount:,.2f}</span>'
+                fee_str = f'<span style="color:green;">{fee:,.2f}</span>'
             else:
                 sign = ""
                 direction = "기타"
+                amount_str = f"{amount:,.2f}"
+                fee_str = f"{fee:,.2f}"
 
-            row = {
-                "보낸 사람": sender[:5] + "...",
-                "받는 사람": recipient[:5] + "...",
-                "금액": f"{sign}{amount:.2f}" if sign else f"{amount:,.2f}",
-                "수수료": f"{sign}{fee:.2f}" if direction == "출금" else f"{fee:.2f}",
-                "시간": time_str,
-                "구분": direction
-            }
-            table_data.append(row)  
+            table_html += f"""
+                <tr>
+                    <td>{sender[:5]}...</td>
+                    <td>{recipient[:5]}...</td>
+                    <td style="text-align:right;">{amount_str}</td>
+                    <td style="text-align:right;">{fee_str}</td>
+                    <td>{time_str}</td>
+                    <td>{direction}</td>
+                </tr>"""
 
-        df = pd.DataFrame(table_data)
+        table_html += "</tbody></table>"
 
-        def highlight_signed(val):
-            if isinstance(val, str) and val.startswith('+'):
-                return 'color: green; font-weight: bold'
-            elif isinstance(val, str) and val.startswith('-'):
-                return 'color: red; font-weight: bold'
-            return ''
-
-        styled_df = df.style.applymap(highlight_signed, subset=["금액", "수수료"])
-        st.dataframe(styled_df, use_container_width=True)
+        st.markdown(table_html, unsafe_allow_html=True)
     else:
-        st.info("이체 내역이 없습니다.")
+        st.info("📭 이체 내역이 없습니다.")
