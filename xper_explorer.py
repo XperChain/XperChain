@@ -124,7 +124,7 @@ with st.expander("⛓️ 블록체인 탐색기", expanded=True):
                 <table style="width:100%; border-collapse: collapse;" border="1">
                     <thead>
                         <tr style="background-color:#f2f2f2;">
-                            <th>보낸 사람</th><th>받는 사람</th><th>금액</th><th>수수료</th><th>총합</th><th>서명</th><th>시간</th>
+                            <th style="text-align: center;">보낸 사람</th><th style="text-align: center;">받는 사람</th><th style="text-align: center;">금액</th><th style="text-align: center;">수수료</th><th style="text-align: center;">합계계</th>
                         </tr>
                     </thead>
                     <tbody>"""
@@ -142,8 +142,6 @@ with st.expander("⛓️ 블록체인 탐색기", expanded=True):
                             <td style="text-align:right;">{amount:,.2f}</td>
                             <td style="text-align:right;">{fee:,.2f}</td>
                             <td style="text-align:right;">{total:,.2f}</td>
-                            <td>{tx.get("signature", "")[:5]}...</td>
-                            <td>{time_str}</td>
                         </tr>"""
 
                 tx_html += "</tbody></table>"
