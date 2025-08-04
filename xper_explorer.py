@@ -27,28 +27,38 @@ total_supply = supply_result[0]["total_supply"] if supply_result else 0.0
 latest_block = blocks.find_one(sort=[("index", -1)])
 last_block_index = latest_block["index"] if latest_block else 0
 
+# 총 지갑 수
+wallet_count = accounts.count_documents({})
+
 col1, col2 = st.columns(2)
 col1.metric("📦 총 블록 수", f"{last_block_index:,}")
 col2.metric("🔢 총 발행량", f"{total_supply:,.2f} XPER")
 
- 
-account_list = list(accounts.find().sort("balance", -1))
+# 화면 출력
+col1, col2 = st.columns(2)
+col1.metric("👛 총 지갑 수", f"{wallet_count:,}")
 
+
+st.markdown("🏆 상위 10개 지갑")
+account_list = list(accounts.find().sort("balance", -1))
 if not account_list:
     st.info("📭 아직 생성된 지갑이 없습니다.")
 else:
+    icons = ["🥇", "🥈", "🥉"]
     table_data = []
-    for account in account_list:
+    for idx, account in enumerate(account_list[:10]):  # 상위 10개만
         address = account.get("address", "")[:10] + "..."
         balance = account.get("balance", 0.0)
         ratio = (balance / total_supply * 100) if total_supply > 0 else 0
+        rank_icon = icons[idx] if idx < 3 else ""  # 상위 3개만 아이콘 부여
+
         table_data.append({
-            "지갑 주소": address,
+            "지갑 주소": f"{rank_icon} {address}",
             "잔고": f"{balance:,.2f}",
             "비율": f"{ratio:.2f} %"
         })
 
-    table_html = """
+    table_html = """        
         <table style="width:100%; border-collapse: collapse;" border="1">
             <thead>
                 <tr style="background-color: #f0f0f0;">
@@ -67,9 +77,10 @@ else:
                     <td style="text-align: center;">{row['비율']}</td>
                 </tr>"""
 
-    table_html += "</tbody></table>"        
+    table_html += "</tbody></table>"
 
     st.markdown(table_html, unsafe_allow_html=True)
+
 
 with st.expander("⛓️ 블록체인 탐색기", expanded=True):
     latest_block = blocks.find_one(sort=[("index", -1)])    
