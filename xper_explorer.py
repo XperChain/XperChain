@@ -132,6 +132,7 @@ with st.expander("⛓️ 블록체인 탐색기", expanded=True):
             else:
                 tx_html = """
                 <h4>📦 트랜잭션 목록</h4>
+                <div style="overflow-x:auto">
                 <table style="width:100%; border-collapse: collapse;" border="1">
                     <thead>
                         <tr style="background-color:#f2f2f2;">
@@ -155,7 +156,7 @@ with st.expander("⛓️ 블록체인 탐색기", expanded=True):
                             <td style="text-align:right;">{total:,.2f}</td>
                         </tr>"""
 
-                tx_html += "</tbody></table>"
+                tx_html += "</div></tbody></table>"
                 st.markdown(tx_html, unsafe_allow_html=True)
         else:            
             st.info("❗해당 블록은 저장 공간 절약을 위해 삭제(pruning)되었습니다.")
