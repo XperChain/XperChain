@@ -72,14 +72,18 @@ if not st.session_state["logged_in_user"]:
                             st.stop()
                     else:
                         # 개인키 및 공개키 자동 생성
-                        pub, priv = generate_wallet()
+                        pub, priv = generate_wallet()                    
+                    
+                    # 암호화
+                    encrypted_priv = utils.encrypt_private_key(priv, password)
 
                     users.insert_one({
                         "username": username,
                         "password_hash": utils.hash_password(password),
                         "public_key": pub,
-                        "private_key": priv
-                    })                      
+                        "private_key": encrypted_priv  
+                    })
+                    
                     st.success("🎉 회원가입 성공! 이제 로그인 해보세요.")                  
 
         elif auth_mode == "로그인":
@@ -90,7 +94,9 @@ if not st.session_state["logged_in_user"]:
                 else:                                                          
                     
                     st.session_state["logged_in_user"] = user
-                    st.session_state["balance"] = get_balance(user["public_key"], accounts)
+                    st.session_state["balance"] = get_balance(user["public_key"], accounts) 
+                    st.session_state["public_key"] = user["public_key"]  
+                    st.session_state["private_key"] = utils.decrypt_private_key(user["private_key"], password)  # 추후 보안 강화 필요요                    
                     st.success(f"환영합니다, {username}님!")                    
                     st.rerun()
 
@@ -99,8 +105,8 @@ if not st.session_state["logged_in_user"]:
     
 # 사용자 세션 정보
 user = st.session_state["logged_in_user"]
-public_key = user["public_key"]  # 공개키가 지갑 주소 역할을 함
-private_key = user["private_key"]
+public_key = st.session_state["public_key"]
+private_key = st.session_state["private_key"]
     
 with st.expander("📂 내 지갑 정보", expanded=True):  
     st.markdown(f"👤 사용자: `{user['username']}`")        
@@ -268,3 +274,4 @@ with st.expander("📥 이체 내역", expanded=True):
         st.markdown(table_html, unsafe_allow_html=True)
     else:
         st.info("📭 이체 내역이 없습니다.")
+
