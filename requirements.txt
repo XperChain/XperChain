@@ -5,4 +5,5 @@ numpy
 Pillow
 opencv-python-headless
 qrcode
+cryptography
 ecdsa
